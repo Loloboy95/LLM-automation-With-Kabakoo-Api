@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Enregistrement Audio</title>
+  </head>
+  <body>
+    <h1>Enregistrement Audio</h1>
+    <button onclick="startRecording()">Démarrer l'enregistrement</button>
+    <button onclick="stopRecording()">Arrêter l'enregistrement</button>
+    <button onclick="saveRecording()">Enregistrer l'enregistrement</button>
+    <button onclick="transcribeRecording()">Transcrire</button>
+
+    <audio id="audioPlayer" controls></audio>
+
+    <div id="transcriptionResult"></div>
+
+    <script>
+      let mediaRecorder;
+      let audioChunks = [];
+      let audioPlayer = document.getElementById("audioPlayer");
+      let audioBlob;
+
+      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.addEventListener("dataavailable", (event) => {
+          audioChunks.push(event.data);
+        });
+        mediaRecorder.addEventListener("stop", () => {
+          audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+          audioPlayer.src = URL.createObjectURL(audioBlob);
+        });
+      });
+
+      function startRecording() {
+        audioChunks = [];
+        mediaRecorder.start();
+      }
+
+      function stopRecording() {
+        mediaRecorder.stop();
+      }
+
+      function getCSRFToken() {
+        let cookieValue = null;
+        const cookies = document.cookie.split(";");
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.startsWith("csrftoken=")) {
+            cookieValue = cookie.substring("csrftoken=".length, cookie.length);
+            break;
+          }
+        }
+        return cookieValue;
+      }
+
+      function saveRecording() {
+        if (!audioBlob) {
+          alert("Veuillez enregistrer l'audio avant de sauvegarder.");
+          return;
+        }
+        let formData = new FormData();
+        formData.append("audio_file", audioBlob, "recording.wav");
+
+        fetch("/transcribe/", {
+          method: "POST",
+          headers: {
+            "X-CSRFToken": getCSRFToken(),
+          },
+          body: formData,
+        })
+          .then((response) => {
+            if (response.ok) {
+              console.log("Enregistrement audio envoyé avec succès !");
+            } else {
+              console.error("Erreur lors de l'envoi de l'enregistrement audio");
+            }
+          })
+          .catch((error) => {
+            console.error(
+              "Erreur lors de l'envoi de l'enregistrement audio:",
+              error
+            );
+          });
+      }
+
+      function transcribeRecording() {
+        if (!audioBlob) {
+          alert("Veuillez enregistrer l'audio avant de transcrire.");
+          return;
+        }
+        let formData = new FormData();
+        formData.append("audio_file", audioBlob, "recording.wav");
+
+        fetch("/transcribe/", {
+          method: "POST",
+          headers: {
+            "X-CSRFToken": getCSRFToken(),
+          },
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (
+              data.transcription_bambara &&
+              data.translation_french &&
+              data.translation_bambara
+            ) {
+              document.getElementById("transcriptionResult").innerHTML = `
+                        <p>Transcription en Bambara: ${data.transcription_bambara}</p>
+                        <p>Traduction en Français: ${data.translation_french}</p>
+                        <p>Traduction en Bambara: ${data.translation_bambara}</p>
+                        <img src="${data.image_url}" alt="Image générée" style="max-width: 100%">
+                    `;
+            } else {
+              document.getElementById("transcriptionResult").innerHTML =
+                "<p>Erreur lors de la transcription ou de la traduction.</p>";
+            }
+          })
+          .catch((error) => {
+            console.error("Erreur lors de la transcription:", error);
+            document.getElementById("transcriptionResult").innerHTML =
+              "<p>Erreur lors de la transcription.</p>";
+          });
+      }
+    </script>
+  </body>
+</html>
